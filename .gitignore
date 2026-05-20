@@ -1,0 +1,17 @@
+# 编译产物
+build/
+
+# IDE 临时文件
+.vs/
+*.user
+*.suo
+
+# CMake 生成文件
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.ninja*
+
+# 系统文件
+Thumbs.db
+Desktop.ini
