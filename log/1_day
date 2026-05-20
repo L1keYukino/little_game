@@ -1,0 +1,64 @@
+# 开发日志 — 第1天
+
+## 做了什么
+
+### 环境搭建
+- 安装 vcpkg 包管理器（D:\dev\vcpkg）
+- 下载 SFML 3.0.0 预编译库（VC17/x64，D:\dev\SFML-3.0.0）
+- 配置 CMake + MSVC 2026 编译环境
+- 创建 CMakeLists.txt 项目骨架
+
+### 阶段1：世界与玩家
+
+架构设计：
+- Scene 抽象基类（handleInput / update / render）
+- Game 类（主循环 + 场景栈管理）
+- Camera 类（sf::View 平滑跟随 + 世界边界锁定）
+- TileMap 类（sf::VertexArray Triangles 批量渲染 30×26 瓦片地图）
+- Player 类（WASD 移动 + 对角线速度正则化）
+- FarmScene 类（整合地图/玩家/摄像机 + 分轴碰撞检测）
+
+地图布局：30列×26行，64px/格，世界尺寸1920×1664
+- 边缘灰蓝色墙壁（不可行走）
+- 深绿色草地（可行走）
+- 中央5×5棕色耕地（阶段2可种植）
+
+### 踩过的坑
+1. GitHub 克隆超时 → 需要开代理
+2. vcpkg 编译依赖太慢 → 改用 SFML 预编译包
+3. curl 比 Invoke-WebRequest 下载 GitHub release 更稳定
+4. SFML 3.0 移除 Quads → 改用 Triangles，每瓦片从4顶点改为6顶点
+5. SFML 3.0 sf::FloatRect 构造改为 Vector2 + Vector2
+6. 中文注释导致 MSVC C4819 → CMake 加 /utf-8 编译选项
+7. 碰撞检测未分轴 → 靠墙斜走被卡死 → 改为X/Y独立检测后修复
+8. 摄像机未限界 → 地图边缘露出黑边 → Camera 加 setWorldBounds + std::clamp
+
+### 知识点
+- sf::RenderWindow = 窗口画布，Camera/sf::View = 取景框
+- pollEvent 非阻塞，没有事件不等待
+- dt = clock.restart() 让游戏速度与帧率无关
+- clear() + display() 双缓冲防撕裂
+- sf::VertexArray 一次 draw call 批量渲染（而非每格子一个 Sprite）
+- 碰撞检测按AABB四个角 + 分轴回退实现贴墙滑行
+
+### 项目结构
+```
+z_game/
+  CMakeLists.txt
+  build.bat
+  assets/
+    tilesets/
+    characters/
+  src/
+    main.cpp
+    core/     → Game, Scene, Camera
+    entities/ → Player
+    world/    → TileMap
+    scenes/   → FarmScene
+```
+
+### 下一阶段
+阶段2：核心农耕 — 网格交互、工具系统、作物生长、物品栏、昼夜循环
+
+---
+日期: 2026-05-20
