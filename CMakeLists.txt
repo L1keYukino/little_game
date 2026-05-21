@@ -21,8 +21,12 @@ set(SOURCES
     src/core/Game.cpp
     src/core/Camera.cpp
     src/world/TileMap.cpp
+    src/world/GameTime.cpp
     src/entities/Player.cpp
+    src/entities/Crop.cpp
+    src/entities/DroppedItem.cpp
     src/scenes/FarmScene.cpp
+    src/systems/FarmingSystem.cpp
     src/ui/Inventory.cpp
 )
 

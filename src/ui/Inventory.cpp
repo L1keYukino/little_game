@@ -7,11 +7,13 @@ static sf::String toSfString(const char* utf8)
     return sf::String::fromUtf8(utf8, utf8 + std::strlen(utf8));
 }
 
-Inventory::Inventory()
+Inventory::Inventory(float winW, float winH)
+    : m_winW(winW), m_winH(winH)
 {
     m_items[0] = ItemType::Hoe;         m_counts[0] = 1;
     m_items[1] = ItemType::WateringCan; m_counts[1] = 1;
-    m_items[2] = ItemType::Seeds;       m_counts[2] = 10;
+    m_items[2] = ItemType::Seeds;       m_counts[2] = 60;
+    m_items[3] = ItemType::Seeds;       m_counts[3] = 40;
 
     if (!m_font.openFromFile("C:/Windows/Fonts/simhei.ttf"))
         m_hasFont = false;
@@ -67,22 +69,72 @@ void Inventory::close()
 
 sf::FloatRect Inventory::getHotbarSlotRect(int slot) const
 {
-    float totalWidth = SLOT_COUNT * SLOT_SIZE + (SLOT_COUNT - 1) * PADDING;
-    float startX = (800.f - totalWidth) / 2.f;
-    float y = 600.f - SLOT_SIZE - 12.f;
-    return sf::FloatRect(sf::Vector2f(startX + slot * (SLOT_SIZE + PADDING), y),
-                         sf::Vector2f(SLOT_SIZE, SLOT_SIZE));
+    float slotSize = static_cast<float>(SLOT_SIZE);
+    float totalW  = HOTBAR_COUNT * slotSize + (HOTBAR_COUNT - 1) * PADDING;
+    float startX  = (m_winW - totalW) / 2.f;
+
+    float y;
+    if (m_open)
+    {
+        const float B_SLOT = 54.f, B_GAP = 6.f;
+        float gridH  = BACKPACK_ROWS * B_SLOT + (BACKPACK_ROWS - 1) * B_GAP;
+        float titleH = 26.f, padT = 6.f, padB = 10.f;
+        float trashH = 48.f, gap = 30.f;
+        float panelH = titleH + padT + gridH + padB;
+        float totalH = panelH + trashH + gap + slotSize;
+        float baseY  = (m_winH - totalH) / 2.f;
+        y = baseY + panelH + trashH + gap;
+    }
+    else
+    {
+        y = m_winH - SLOT_SIZE - 12.f;
+    }
+
+    return sf::FloatRect(sf::Vector2f(startX + slot * (slotSize + PADDING), y),
+                         sf::Vector2f(slotSize, slotSize));
 }
 
 sf::FloatRect Inventory::getBackpackSlotRect(int slot) const
 {
-    const float B_SLOT = 72.f, B_GAP = 8.f, COLS = 4.f;
-    float gridW = COLS * B_SLOT + (COLS - 1) * B_GAP;
-    float panelX = 400.f - gridW / 2.f, panelY = 220.f;
-    int col = slot % 4, row = slot / 4;
+    // 仅背包槽位 8-31，3行×8列
+    int idx = slot - HOTBAR_COUNT; // 0..23
+    if (idx < 0 || idx >= (SLOT_COUNT - HOTBAR_COUNT))
+        return sf::FloatRect({0,0}, {0,0});
+
+    const float B_SLOT = 54.f, B_GAP = 6.f;
+    float gridW = BACKPACK_COLS * B_SLOT + (BACKPACK_COLS - 1) * B_GAP;
+    float gridH = BACKPACK_ROWS * B_SLOT + (BACKPACK_ROWS - 1) * B_GAP;
+    float titleH = 26.f, padT = 6.f, padB = 10.f;
+    float trashH = 48.f, gap = 30.f;
+    float panelH = titleH + padT + gridH + padB;
+    float totalH = panelH + trashH + gap + static_cast<float>(SLOT_SIZE);
+    float baseY  = (m_winH - totalH) / 2.f;
+    float panelY = baseY;
+    float panelX = (m_winW - gridW) / 2.f;
+
+    int col = idx % BACKPACK_COLS;
+    int row = idx / BACKPACK_COLS;
     return sf::FloatRect(sf::Vector2f(panelX + col * (B_SLOT + B_GAP),
-                                       panelY + row * (B_SLOT + B_GAP)),
+                                       panelY + titleH + padT + row * (B_SLOT + B_GAP)),
                          sf::Vector2f(B_SLOT, B_SLOT));
+}
+
+sf::FloatRect Inventory::getTrashSlotRect() const
+{
+    const float B_SLOT = 54.f, B_GAP = 6.f;
+    float gridH  = BACKPACK_ROWS * B_SLOT + (BACKPACK_ROWS - 1) * B_GAP;
+    float titleH = 26.f, padT = 6.f, padB = 10.f;
+    float trashH = 48.f, trashW = 48.f;
+    float gap    = 10.f;
+    float panelH = titleH + padT + gridH + padB;
+    float totalH = panelH + trashH + gap + static_cast<float>(SLOT_SIZE);
+    float baseY  = (m_winH - totalH) / 2.f;
+    float trashY = baseY + panelH + 3.f;
+
+    float gridW  = BACKPACK_COLS * B_SLOT + (BACKPACK_COLS - 1) * B_GAP;
+    float panelR = (m_winW + gridW) / 2.f;
+    return sf::FloatRect(sf::Vector2f(panelR - trashW, trashY),
+                         sf::Vector2f(trashW, trashH));
 }
 
 // ====== 交互 ======
@@ -110,10 +162,25 @@ void Inventory::placeOne(int slot)
 void Inventory::placeAll(int slot)
 {
     if (m_cursorCount <= 0) return;
+
     if (m_items[slot] == m_cursorType)
-    { m_counts[slot] += m_cursorCount; m_cursorType = ItemType::Empty; m_cursorCount = 0; }
+    {
+        int maxStack = maxStackSize(m_cursorType);
+        int space = maxStack - m_counts[slot];
+        int add = std::min(space, m_cursorCount);
+        m_counts[slot] += add;
+        m_cursorCount  -= add;
+        if (m_cursorCount <= 0) m_cursorType = ItemType::Empty;
+    }
     else if (m_items[slot] == ItemType::Empty)
-    { m_items[slot] = m_cursorType; m_counts[slot] = m_cursorCount; m_cursorType = ItemType::Empty; m_cursorCount = 0; }
+    {
+        int maxStack = maxStackSize(m_cursorType);
+        int add = std::min(maxStack, m_cursorCount);
+        m_items[slot] = m_cursorType;
+        m_counts[slot] = add;
+        m_cursorCount  -= add;
+        if (m_cursorCount <= 0) m_cursorType = ItemType::Empty;
+    }
     else
     { std::swap(m_cursorType, m_items[slot]); std::swap(m_cursorCount, m_counts[slot]); }
 }
@@ -121,8 +188,48 @@ void Inventory::placeAll(int slot)
 void Inventory::throwCursorItem(int count)
 {
     if (m_cursorCount <= 0) return;
-    m_cursorCount -= std::min(count, m_cursorCount);
+    int toss = std::min(count, m_cursorCount);
+    m_cursorCount -= toss;
     if (m_cursorCount <= 0) m_cursorType = ItemType::Empty;
+}
+
+bool Inventory::addItemAuto(ItemType type, int count)
+{
+    int maxStack = maxStackSize(type);
+    int remaining = count;
+
+    // 1. 先尝试合并到已有同类格子
+    for (int i = 0; i < SLOT_COUNT && remaining > 0; ++i)
+    {
+        if (m_items[i] == type && m_counts[i] < maxStack)
+        {
+            int space = maxStack - m_counts[i];
+            int add   = std::min(space, remaining);
+            m_counts[i] += add;
+            remaining   -= add;
+        }
+    }
+
+    // 2. 多余的放空格子
+    for (int i = 0; i < SLOT_COUNT && remaining > 0; ++i)
+    {
+        if (m_items[i] == ItemType::Empty)
+        {
+            int add = std::min(maxStack, remaining);
+            m_items[i] = type;
+            m_counts[i] = add;
+            remaining  -= add;
+        }
+    }
+
+    return remaining == 0; // true=全部捡起, false=背包满了
+}
+
+std::vector<ThrowEntry> Inventory::drainThrowQueue()
+{
+    auto q = std::move(m_throwQueue);
+    m_throwQueue.clear();
+    return q;
 }
 
 void Inventory::onMouseDown(bool ctrlHeld, const sf::Vector2i& mousePos)
@@ -155,8 +262,28 @@ void Inventory::onMouseDown(bool ctrlHeld, const sf::Vector2i& mousePos)
 
     m_mouseDown = true;
     m_dragFromSlot = m_hoveredSlot;
+
+    // 点击垃圾桶：拿起里面的物品
+    if (m_trashItem != ItemType::Empty && getTrashSlotRect().contains(sf::Vector2f(mousePos)))
+    {
+        if (m_cursorCount > 0)
+        {
+            // 手里有物品 → 交换
+            std::swap(m_cursorType, m_trashItem);
+            std::swap(m_cursorCount, m_trashCount);
+        }
+        else
+        {
+            // 手里空 → 拿出
+            m_cursorType = m_trashItem; m_cursorCount = m_trashCount;
+            m_trashItem = ItemType::Empty; m_trashCount = 0;
+        }
+        m_dragFromSlot = -1;
+        return;
+    }
+
     m_splitMode = ctrlHeld && m_hoveredSlot >= 0 && m_cursorCount == 0
-                  && m_counts[m_hoveredSlot] >= 2; // Ctrl+按住准备拆分
+                  && m_counts[m_hoveredSlot] >= 2;
 
     if (m_hoveredSlot < 0) { m_splitMode = false; return; }
 
@@ -173,7 +300,7 @@ void Inventory::onMouseDown(bool ctrlHeld, const sf::Vector2i& mousePos)
     }
 }
 
-void Inventory::onMouseUp(bool ctrlHeld, const sf::Vector2i& /*mousePos*/)
+void Inventory::onMouseUp(bool ctrlHeld, const sf::Vector2i& mousePos)
 {
     m_mouseDown = false;
     m_draggingSlider = false;
@@ -193,12 +320,47 @@ void Inventory::onMouseUp(bool ctrlHeld, const sf::Vector2i& /*mousePos*/)
 
     m_splitMode = false;
 
+    // Ctrl + 拖到垃圾桶 → 拆分数对话框
+    if (getTrashSlotRect().contains(sf::Vector2f(mousePos)) && m_cursorCount > 0 && ctrlHeld)
+    {
+        openSplitDialog(m_dragFromSlot, -2); // target=-2 表示"垃圾桶"
+        m_dragFromSlot = -1;
+        return;
+    }
+
+    // 拖到垃圾桶 → 全部放入
+    if (getTrashSlotRect().contains(sf::Vector2f(mousePos)) && m_cursorCount > 0)
+    {
+        m_trashItem  = m_cursorType;
+        m_trashCount = m_cursorCount;
+        m_cursorType  = ItemType::Empty;
+        m_cursorCount = 0;
+        m_dragFromSlot = -1;
+        return;
+    }
+
     if (m_hoveredSlot >= 0)
     {
         placeAll(m_hoveredSlot);
     }
 
-    // 如果手里还有 → 归位到原格子
+    // Ctrl + 拖到外面 → 拆分数对话框
+    if (m_cursorCount > 0 && m_hoveredSlot < 0 && ctrlHeld)
+    {
+        openSplitDialog(m_dragFromSlot, -1);
+        m_dragFromSlot = -1;
+        return;
+    }
+
+    // 手里还有物品且在外面 → 扔到地上
+    if (m_cursorCount > 0 && m_hoveredSlot < 0)
+    {
+        m_throwQueue.push_back({m_cursorType, m_cursorCount});
+        m_cursorType  = ItemType::Empty;
+        m_cursorCount = 0;
+    }
+
+    // 手里还有且在同格 → 归位
     if (m_cursorCount > 0 && m_dragFromSlot >= 0)
     {
         if (m_items[m_dragFromSlot] == m_cursorType)
@@ -218,6 +380,9 @@ void Inventory::onThrowKey()
     m_throwCooldown = 0.15f;
     int slot = m_open ? m_hoveredSlot : m_selectedSlot;
     if (slot < 0 || m_items[slot] == ItemType::Empty) return;
+
+    // 通过扔出队列 → 在场景中生成 DroppedItem
+    m_throwQueue.push_back({m_items[slot], 1});
     removeItem(slot, 1);
 }
 
@@ -233,10 +398,19 @@ void Inventory::update(float dt)
 void Inventory::updateHover(const sf::Vector2i& mousePos)
 {
     if (m_draggingSlider) { updateSplitSlider(mousePos); return; }
-    if (!m_open || m_splitDialogOpen) { m_hoveredSlot = -1; return; }
+    if (m_splitDialogOpen) { m_hoveredSlot = -1; return; }
+
     m_hoveredSlot = -1;
-    for (int i = 0; i < SLOT_COUNT; ++i)
-        if (getBackpackSlotRect(i).contains(sf::Vector2f(mousePos)))
+
+    // 背包打开时先检查背包面板槽位(8-31)，再检查热键栏(0-7)
+    if (m_open)
+    {
+        for (int i = HOTBAR_COUNT; i < SLOT_COUNT; ++i)
+            if (getBackpackSlotRect(i).contains(sf::Vector2f(mousePos)))
+            { m_hoveredSlot = i; return; }
+    }
+    for (int i = 0; i < HOTBAR_COUNT; ++i)
+        if (getHotbarSlotRect(i).contains(sf::Vector2f(mousePos)))
         { m_hoveredSlot = i; return; }
 }
 
@@ -271,12 +445,41 @@ void Inventory::openSplitDialog(int sourceSlot, int targetSlot)
 
 void Inventory::closeSplitDialog(bool confirm)
 {
-    // 确认前用输入框内容同步一次数值（防止删空后直接点确认拿到旧值）
+    // 确认前同步输入框
     updateSplitFromInput();
     if (m_splitAmount < 1) m_splitAmount = 1;
 
-    if (confirm && m_splitSourceSlot >= 0 && m_splitTargetSlot >= 0
+    // targetSlot==-1 扔地上, targetSlot==-2 放垃圾桶
+    if (confirm && m_splitSourceSlot >= 0 && m_splitTargetSlot < 0
         && m_cursorCount > 0 && m_splitAmount > 0)
+    {
+        int toss = std::min(m_splitAmount, m_cursorCount);
+
+        if (m_splitTargetSlot == -2) // 垃圾桶
+        {
+            m_trashItem  = m_cursorType;
+            m_trashCount = toss;
+        }
+        else // -1: 扔地上
+        {
+            m_throwQueue.push_back({m_cursorType, toss});
+        }
+
+        m_cursorCount -= toss;
+        if (m_cursorCount <= 0) m_cursorType = ItemType::Empty;
+
+        // 剩余归位
+        if (m_cursorCount > 0)
+        {
+            if (m_items[m_splitSourceSlot] == m_cursorType)
+                m_counts[m_splitSourceSlot] += m_cursorCount;
+            else if (m_items[m_splitSourceSlot] == ItemType::Empty)
+            { m_items[m_splitSourceSlot] = m_cursorType; m_counts[m_splitSourceSlot] = m_cursorCount; }
+            m_cursorType = ItemType::Empty; m_cursorCount = 0;
+        }
+    }
+    else if (confirm && m_splitSourceSlot >= 0 && m_splitTargetSlot >= 0
+             && m_cursorCount > 0 && m_splitAmount > 0)
     {
         int toTarget = std::min(m_splitAmount, m_cursorCount);
         m_items[m_splitTargetSlot] = m_cursorType;
@@ -353,7 +556,7 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
 {
     if (!m_splitDialogOpen) return;
 
-    sf::RectangleShape overlay(sf::Vector2f(800.f, 600.f));
+    sf::RectangleShape overlay(sf::Vector2f(m_winW, m_winH));
     overlay.setFillColor(sf::Color(0, 0, 0, 140));
     window.draw(overlay);
 
@@ -370,7 +573,7 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
     title.setString(toSfString("拆分物品"));
     title.setCharacterSize(18);
     title.setFillColor(sf::Color::White);
-    title.setPosition(sf::Vector2f(400.f - title.getLocalBounds().size.x / 2.f, 208.f));
+    title.setPosition(sf::Vector2f(m_winW / 2.f -title.getLocalBounds().size.x / 2.f, 208.f));
     window.draw(title);
 
     // 数字输入框
@@ -387,7 +590,7 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
     inputText.setString(m_splitInput);
     inputText.setCharacterSize(20);
     inputText.setFillColor(sf::Color::White);
-    float ix = 400.f - inputText.getLocalBounds().size.x / 2.f;
+    float ix = m_winW / 2.f -inputText.getLocalBounds().size.x / 2.f;
     inputText.setPosition(sf::Vector2f(ix, 240.f));
     window.draw(inputText);
 
@@ -448,35 +651,101 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
 
 void Inventory::render(sf::RenderWindow& window)
 {
-    if (m_open) renderBackpack(window); else renderHotbar(window);
+    if (m_open) renderBackpack(window);
+    renderHotbar(window);
     if (m_cursorCount > 0 && !m_splitDialogOpen) renderCursorItem(window);
     if (m_splitDialogOpen) renderSplitDialog(window);
+    renderTooltip(window); // 最顶层
 }
 
 void Inventory::renderHotbar(sf::RenderWindow& window)
-{ for (int i = 0; i < SLOT_COUNT; ++i) drawSlot(window, i, getHotbarSlotRect(i)); }
+{
+    // 底部 8 格快捷栏
+    for (int i = 0; i < HOTBAR_COUNT; ++i)
+        drawSlot(window, i, getHotbarSlotRect(i));
+}
 
 void Inventory::renderBackpack(sf::RenderWindow& window)
 {
-    sf::RectangleShape overlay(sf::Vector2f(800.f, 600.f));
+    sf::RectangleShape overlay(sf::Vector2f(m_winW, m_winH));
     overlay.setFillColor(sf::Color(0, 0, 0, 100)); window.draw(overlay);
 
-    sf::RectangleShape panelBg(sf::Vector2f(440.f, 280.f));
-    panelBg.setPosition(sf::Vector2f(400.f - 220.f, 130.f));
+    // 布局常量
+    const float B_SLOT = 54.f, B_GAP = 6.f;
+    float gridW  = 8.f * B_SLOT + 7.f * B_GAP;
+    float gridH  = 3.f * B_SLOT + 2.f * B_GAP;
+    float titleH = 26.f, padT = 6.f, padB = 10.f, padH = 20.f;
+    float panelW = gridW + padH * 2.f;
+    float panelH = titleH + padT + gridH + padB;
+    float panelX = (m_winW - panelW) / 2.f;
+
+    float trashH = 48.f, trashW = 48.f, gap = 30.f;
+    float totalH = panelH + trashH + gap + SLOT_SIZE;
+    float baseY  = (m_winH - totalH) / 2.f;
+    float panelY = baseY;
+    float hotbarY = baseY + panelH + trashH + gap;
+
+    // 背包矩形背景
+    sf::RectangleShape panelBg(sf::Vector2f(panelW, panelH));
+    panelBg.setPosition(sf::Vector2f(panelX, panelY));
     panelBg.setFillColor(sf::Color(60, 60, 60, 240));
     panelBg.setOutlineColor(sf::Color(130, 130, 130, 255));
-    panelBg.setOutlineThickness(3.f); window.draw(panelBg);
+    panelBg.setOutlineThickness(3.f);
+    window.draw(panelBg);
 
+    // 物品栏仅在位置上移，不加额外背景
     if (m_hasFont)
     {
         sf::Text title(m_font); title.setString(toSfString("物品栏"));
-        title.setCharacterSize(20); title.setFillColor(sf::Color::White);
-        title.setPosition(sf::Vector2f(400.f - title.getLocalBounds().size.x / 2.f, 138.f));
+        title.setCharacterSize(18); title.setFillColor(sf::Color::White);
+        title.setPosition(sf::Vector2f(m_winW / 2.f - title.getLocalBounds().size.x / 2.f, panelY + 4.f));
         window.draw(title);
     }
 
-    for (int i = 0; i < SLOT_COUNT; ++i) drawSlot(window, i, getBackpackSlotRect(i));
-    renderTooltip(window);
+    // 24 个格子
+    // 背包面板只画槽位 8-31（3行×8列）
+    for (int i = HOTBAR_COUNT; i < SLOT_COUNT; ++i)
+        drawSlot(window, i, getBackpackSlotRect(i));
+
+    // 垃圾桶
+    {
+        sf::FloatRect tr = getTrashSlotRect();
+        sf::RectangleShape trashBg(tr.size);
+        trashBg.setPosition(tr.position);
+        trashBg.setFillColor(sf::Color(40, 30, 30, 200));
+        trashBg.setOutlineColor(sf::Color(150, 80, 80, 200));
+        trashBg.setOutlineThickness(2.f);
+        window.draw(trashBg);
+
+        if (m_trashItem != ItemType::Empty)
+        {
+            float tiSize = tr.size.x * 0.55f;
+            sf::RectangleShape icon(sf::Vector2f(tiSize, tiSize));
+            icon.setOrigin(sf::Vector2f(tiSize / 2.f, tiSize / 2.f));
+            icon.setPosition(sf::Vector2f(tr.position.x + tr.size.x / 2.f,
+                                           tr.position.y + tr.size.y / 2.f));
+            switch (m_trashItem)
+            {
+            case ItemType::Hoe: icon.setFillColor(sf::Color(150,150,150)); break;
+            case ItemType::WateringCan: icon.setFillColor(sf::Color(80,130,200)); break;
+            case ItemType::Seeds: icon.setFillColor(sf::Color(200,180,80)); break;
+            case ItemType::Turnip: icon.setFillColor(sf::Color(255,100,100)); break;
+            default: break;
+            }
+            window.draw(icon);
+        }
+
+        if (m_hasFont)
+        {
+            sf::Text trashLabel(m_font);
+            trashLabel.setString(toSfString("垃圾桶"));
+            trashLabel.setCharacterSize(10);
+            trashLabel.setFillColor(sf::Color(200, 120, 120));
+            trashLabel.setPosition(sf::Vector2f(tr.position.x + 2.f, tr.position.y + tr.size.y + 2.f));
+            window.draw(trashLabel);
+        }
+    }
+
 }
 
 void Inventory::drawSlot(sf::RenderWindow& window, int i, const sf::FloatRect& rect)
@@ -505,8 +774,10 @@ void Inventory::drawSlot(sf::RenderWindow& window, int i, const sf::FloatRect& r
     { m_hoverShape.setSize(rect.size); m_hoverShape.setPosition(rect.position); window.draw(m_hoverShape); }
 
     float fs = rect.size.x;
-    sf::RectangleShape icon(sf::Vector2f(fs * 0.5f, fs * 0.5f));
-    icon.setPosition(sf::Vector2f(rect.position.x + fs * 0.25f, rect.position.y + fs * 0.08f));
+    float iconSize = fs * 0.55f;
+    sf::RectangleShape icon(sf::Vector2f(iconSize, iconSize));
+    icon.setOrigin(sf::Vector2f(iconSize / 2.f, iconSize / 2.f));
+    icon.setPosition(sf::Vector2f(rect.position.x + fs / 2.f, rect.position.y + fs / 2.f));
     switch (m_items[i])
     {
     case ItemType::Hoe:         icon.setFillColor(sf::Color(150,150,150)); break;
@@ -519,19 +790,13 @@ void Inventory::drawSlot(sf::RenderWindow& window, int i, const sf::FloatRect& r
 
     if (m_hasFont)
     {
-        sf::Text nameText(m_font); nameText.setString(toSfString(itemName(m_items[i])));
-        nameText.setCharacterSize(static_cast<unsigned int>(fs * 0.22f));
-        nameText.setFillColor(sf::Color::White);
-        nameText.setPosition(sf::Vector2f(rect.position.x + (fs - nameText.getLocalBounds().size.x) / 2.f,
-                                           rect.position.y + fs * 0.58f));
-        window.draw(nameText);
-
         if (m_counts[i] > 1)
         {
             sf::Text countText(m_font); countText.setString(std::to_string(m_counts[i]));
-            countText.setCharacterSize(static_cast<unsigned int>(fs * 0.2f));
+            countText.setCharacterSize(static_cast<unsigned int>(fs * 0.24f));
             countText.setFillColor(sf::Color(220,220,220));
-            countText.setPosition(sf::Vector2f(rect.position.x + fs - 24.f, rect.position.y + fs - 20.f));
+            float tw = countText.getLocalBounds().size.x;
+            countText.setPosition(sf::Vector2f(rect.position.x + fs - tw - 3.f, rect.position.y + fs - 13.f));
             window.draw(countText);
         }
     }
@@ -539,20 +804,63 @@ void Inventory::drawSlot(sf::RenderWindow& window, int i, const sf::FloatRect& r
 
 void Inventory::renderTooltip(sf::RenderWindow& window) const
 {
-    if (!m_open || m_hoveredSlot < 0 || !m_hasFont) return;
+    if (m_hoveredSlot < 0 || !m_hasFont) return;
     if (m_items[m_hoveredSlot] == ItemType::Empty) return;
+    if (!m_open && m_hoveredSlot >= HOTBAR_COUNT) return;
 
-    sf::Text tooltip(m_font); tooltip.setString(toSfString(itemName(m_items[m_hoveredSlot])));
-    tooltip.setCharacterSize(14); tooltip.setFillColor(sf::Color(255,255,200));
+    sf::FloatRect slotRect = (m_hoveredSlot >= HOTBAR_COUNT)
+        ? getBackpackSlotRect(m_hoveredSlot)
+        : getHotbarSlotRect(m_hoveredSlot);
 
-    sf::Vector2i rawMouse = sf::Mouse::getPosition(window);
-    tooltip.setPosition(sf::Vector2f(static_cast<float>(rawMouse.x) + 16.f, static_cast<float>(rawMouse.y) + 16.f));
-    sf::FloatRect tb = tooltip.getLocalBounds();
+    const char* name = itemName(m_items[m_hoveredSlot]);
+    bool showProps = m_open && sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R);
 
-    sf::RectangleShape tipBg(sf::Vector2f(tb.size.x + 12.f, tb.size.y + 8.f));
-    tipBg.setPosition(sf::Vector2f(static_cast<float>(rawMouse.x) + 12.f, static_cast<float>(rawMouse.y) + 14.f));
-    tipBg.setFillColor(sf::Color(0,0,0,200));
-    window.draw(tipBg); window.draw(tooltip);
+    if (showProps)
+    {
+        // 属性模式：仅显示"属性"二字
+        sf::Text titleText(m_font); titleText.setString(toSfString("属性"));
+        titleText.setCharacterSize(13); titleText.setFillColor(sf::Color(200, 180, 255));
+
+        float bgW = titleText.getLocalBounds().size.x + 14.f;
+        float bgH = titleText.getLocalBounds().size.y + 10.f;
+        float tipX = slotRect.position.x + slotRect.size.x + 6.f;
+        float tipY = slotRect.position.y + slotRect.size.y / 2.f - bgH / 2.f;
+        if (tipX + bgW > m_winW) tipX = slotRect.position.x - bgW - 6.f;
+        if (tipY < 0.f) tipY = 2.f;
+
+        sf::RectangleShape tipBg(sf::Vector2f(bgW, bgH));
+        tipBg.setPosition(sf::Vector2f(tipX, tipY));
+        tipBg.setFillColor(sf::Color(20, 20, 20, 235));
+        tipBg.setOutlineColor(sf::Color(100, 80, 160, 220));
+        tipBg.setOutlineThickness(1.f);
+        window.draw(tipBg);
+
+        titleText.setPosition(sf::Vector2f(tipX + 7.f, tipY + 4.f));
+        window.draw(titleText);
+    }
+    else
+    {
+        // 仅名称
+        sf::Text nameText(m_font); nameText.setString(toSfString(name));
+        nameText.setCharacterSize(13); nameText.setFillColor(sf::Color(255, 255, 200));
+
+        float bgW = nameText.getLocalBounds().size.x + 12.f;
+        float bgH = nameText.getLocalBounds().size.y + 8.f;
+        float tipX = slotRect.position.x + slotRect.size.x + 6.f;
+        float tipY = slotRect.position.y + slotRect.size.y / 2.f - bgH / 2.f;
+        if (tipX + bgW > m_winW) tipX = slotRect.position.x - bgW - 6.f;
+        if (tipY < 0.f) tipY = 2.f;
+
+        sf::RectangleShape tipBg(sf::Vector2f(bgW, bgH));
+        tipBg.setPosition(sf::Vector2f(tipX, tipY));
+        tipBg.setFillColor(sf::Color(20, 20, 20, 235));
+        tipBg.setOutlineColor(sf::Color(80, 80, 80, 180));
+        tipBg.setOutlineThickness(1.f);
+        window.draw(tipBg);
+
+        nameText.setPosition(sf::Vector2f(tipX + 5.f, tipY + 3.f));
+        window.draw(nameText);
+    }
 }
 
 void Inventory::renderCursorItem(sf::RenderWindow& window) const

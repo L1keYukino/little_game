@@ -25,9 +25,20 @@ inline const char* itemName(ItemType type)
     }
 }
 
-// 根据物品类型返回对应的工具类型（可装备的物品）
-// 只有工具类物品才有对应的 ToolType
-// 这个转换用于背包选中物品后 → 设置当前工具
+// 每种物品的堆叠上限（一个格子最多放几个）
+inline int maxStackSize(ItemType type)
+{
+    switch (type)
+    {
+    case ItemType::Hoe:         return 1;   // 工具一槽一个
+    case ItemType::WateringCan: return 1;
+    case ItemType::Seeds:       return 60;  // 材料一槽 60
+    case ItemType::Turnip:      return 60;
+    default:                    return 0;
+    }
+}
+
+// 根据物品类型返回对应的工具类型
 inline ToolType itemToTool(ItemType type)
 {
     switch (type)

@@ -5,9 +5,13 @@ namespace {
 }
 
 Game::Game()
-    : m_window(sf::RenderWindow(sf::VideoMode({800, 600}), "Farm Game"))
+    : m_window(sf::RenderWindow(sf::VideoMode({1280, 720}), "Farm Game"))
+    , m_inventory(1280.f, 720.f)
 {
     m_window.setFramerateLimit(60);
+
+    if (m_timeFont.openFromFile("C:/Windows/Fonts/simhei.ttf"))
+        m_hasTimeFont = true;
 }
 
 Game::~Game()
@@ -94,7 +98,14 @@ void Game::handleInput()
 
 void Game::update(float dt)
 {
+    m_gameTime.update(dt);
     m_inventory.update(dt);
+
+    // R 键显示物品名称（仅背包打开时生效）
+    m_inventory.setShowTooltip(
+        m_inventory.isOpen() &&
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R)
+    );
 
     // Q 键扔物品（背包开关都能用）
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q))
@@ -131,6 +142,29 @@ void Game::render()
     sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);
     m_inventory.updateHover(mousePos);
     m_inventory.render(m_window);
+
+    // 右上角时间显示
+    if (m_hasTimeFont)
+    {
+        std::string timeStr = m_gameTime.toString();
+        sf::Text timeText(m_timeFont);
+        timeText.setString(timeStr);
+        timeText.setCharacterSize(22);
+        timeText.setFillColor(sf::Color::White);
+
+        sf::FloatRect tb = timeText.getLocalBounds();
+
+        // 底色（暗色背景 + 半透明）
+        sf::RectangleShape timeBg(sf::Vector2f(tb.size.x + 16.f, tb.size.y + 10.f));
+        timeBg.setPosition(sf::Vector2f(1280.f - tb.size.x - 24.f, 6.f));
+        timeBg.setFillColor(sf::Color(20, 20, 20, 200));
+        timeBg.setOutlineColor(sf::Color(60, 60, 60, 180));
+        timeBg.setOutlineThickness(1.f);
+        m_window.draw(timeBg);
+
+        timeText.setPosition(sf::Vector2f(1280.f - tb.size.x - 16.f, 8.f));
+        m_window.draw(timeText);
+    }
 
     m_window.setView(oldView);
     m_window.display();

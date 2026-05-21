@@ -15,7 +15,7 @@ int main()
     // 创建一个农场场景并设为当前场景
     // std::make_unique 创建独占所有权的智能指针（C++14）
     // Game 接管这个场景的生命周期
-    game.changeScene(std::make_unique<FarmScene>(game.getWindow(), game.getInventory()));
+    game.changeScene(std::make_unique<FarmScene>(game.getWindow(), game.getPlayer(), game.getInventory()));
 
     // 运行游戏主循环（阻塞，直到关闭窗口）
     game.run();
