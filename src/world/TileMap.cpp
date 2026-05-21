@@ -45,7 +45,7 @@ void TileMap::buildVertices()
             // 在顶点数组中的索引：第 (y*width + x) 个 tile，6 个顶点
             int idx = (y * m_width + x) * 6;
 
-            int tileType = m_data[y][x];
+            auto tileType = static_cast<TileType>(m_data[y][x]);
             sf::Color color = getColorForType(tileType);
 
             // 三角形 1: 左上(0) → 右上(1) → 右下(2)
@@ -71,16 +71,17 @@ void TileMap::buildVertices()
     }
 }
 
-sf::Color TileMap::getColorForType(int type) const
+sf::Color TileMap::getColorForType(TileType type) const
 {
-    // 纯色模式 —— 等有了图块集纹理后，这些颜色会被纹理替代
     switch (type)
     {
-    case 0: return sf::Color( 34, 139,  34); // 草地：森林绿
-    case 1: return sf::Color(100, 100, 120); // 墙壁/水：灰蓝
-    case 2: return sf::Color(139,  90,  43); // 耕地：棕色
-    case 3: return sf::Color(144, 238, 144); // 耕种过的湿润土地：浅绿
-    default: return sf::Color::Magenta;       // 洋红 = 未定义类型（调试用）
+    case TileType::Grass:   return sf::Color( 34, 139,  34); // 草地：森林绿
+    case TileType::Wall:    return sf::Color(100, 100, 120); // 墙壁/水：灰蓝
+    case TileType::Dirt:    return sf::Color(139,  90,  43); // 土地：棕色
+    case TileType::Tilled:  return sf::Color(144, 238, 144); // 翻耕地：浅绿
+    case TileType::Watered: return sf::Color( 80, 160,  80); // 湿润耕地：深绿
+    case TileType::Planted: return sf::Color( 60, 180,  60); // 种植中：亮绿
+    default:                return sf::Color::Magenta;
     }
 }
 
@@ -114,27 +115,23 @@ bool TileMap::isSolid(const sf::Vector2f& worldPos) const
 
 bool TileMap::isTileSolid(int tileX, int tileY) const
 {
-    // 类型 1 = 墙壁/水 = 不可行走
-    return m_data[tileY][tileX] == 1;
+    return static_cast<TileType>(m_data[tileY][tileX]) == TileType::Wall;
 }
 
-int TileMap::getTileType(int tileX, int tileY) const
+TileType TileMap::getTileType(int tileX, int tileY) const
 {
     if (tileX < 0 || tileX >= m_width || tileY < 0 || tileY >= m_height)
-        return -1;
-    return m_data[tileY][tileX];
+        return TileType::Wall; // 地图外当墙处理
+    return static_cast<TileType>(m_data[tileY][tileX]);
 }
 
-void TileMap::setTileType(int tileX, int tileY, int type)
+void TileMap::setTileType(int tileX, int tileY, TileType type)
 {
     if (tileX < 0 || tileX >= m_width || tileY < 0 || tileY >= m_height)
         return;
 
-    m_data[tileY][tileX] = type;
+    m_data[tileY][tileX] = static_cast<int>(type);
 
-    // 修改了地图数据后，需要更新对应顶点的颜色
-    // 在阶段 2 中这会很频繁（锄地会改变格子类型）
-    // 每个 tile = 6 个顶点（2 个三角形）
     int idx = (tileY * m_width + tileX) * 6;
     sf::Color color = getColorForType(type);
     for (int i = 0; i < 6; ++i)
@@ -151,11 +148,11 @@ sf::Vector2i TileMap::worldToTile(const sf::Vector2f& worldPos) const
     );
 }
 
-sf::Vector2f TileMap::tileToWorld(int tileX, int tileY) const
+sf::Vector2f TileMap::tileToWorld(const sf::Vector2i& tile) const
 {
     // 格子坐标 → 世界坐标（格子的左上角）
     return sf::Vector2f(
-        static_cast<float>(tileX * m_tileSize),
-        static_cast<float>(tileY * m_tileSize)
+        static_cast<float>(tile.x * m_tileSize),
+        static_cast<float>(tile.y * m_tileSize)
     );
 }

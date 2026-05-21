@@ -1,0 +1,78 @@
+# 开发日志 — 第2天
+
+## 做了什么
+
+### 阶段2.1-2.2：网格交互 + 工具系统
+- 新建 `src/entities/Tool.hpp`：ToolType 枚举 + `canUseTool()` / `getResultTileType()` 函数
+- 新建 `src/entities/Item.hpp`：ItemType 枚举 + `itemName()` 中英文名称 + `itemToTool()` 转换
+- TileType 枚举重构（Grass/Wall/Dirt/Tilled/Watered/Planted），替代魔法数字
+- FarmScene 新增：
+  - `computeInteractTile()` — 玩家面朝方向的格子
+  - 农耕高亮（白色半透明框）
+  - 空格键使用工具（锄头翻土→浇水→播种，按流程触发）
+  - 数字键1-4切换工具
+- 按住空格移动触发问题 → 从 KeyPressed 事件改为 isKeyPressed 实时检测（0.25s 冷却）
+
+### 阶段2.4：物品栏/背包（核心）
+- 新建 `src/ui/Inventory.hpp/cpp`：8格物品栏 + UI渲染 + 交互系统
+- 初始物品：锄头×1、水壶×1、种子×10
+- E 键打开/关闭背包面板（MC式中央面板，4×2网格）
+- 底部快捷栏始终可见
+
+#### 背包交互（MC 风格）
+- 左键拿起 → 拖到另一格松手交换/堆叠
+- 拖出面板松手 → 物品回归原位
+- Q 键扔物品（hold 连发，0.15s 冷却）
+- 数字键 1-8 / 滚轮切换选中物品
+- Ctrl+按住左键拖到空格子 → 弹出拆分对话框
+
+#### 拆分对话框
+- 滑条 + 数字输入框，二者联动
+- 点击输入框聚焦 → 键盘打数字 → 自动截断到最大值
+- 细竖线闪烁光标（0.5s周期）
+- 确认/取消/ESC
+
+#### 道具使用集成
+- 空格键使用背包选中物品对应的工具
+- 种子使用后自动减少
+
+### 重要重构
+- Inventory 从 FarmScene 移到 Game（全局共享）
+- Game 统一处理背包交互（E/滚轮/Q/数字键/鼠标），场景不再重复
+- FarmScene 持 `Inventory&` 引用，只用于读取物品和消耗
+
+## 踩过的坑
+
+1. **SFML 3.0 Key 枚举不支持算术** → 用数组 `{Num1..Num8}` 替代 `Num1+i`
+2. **`sf::Text` 无默认构造函数** → 需要先加载 `sf::Font`
+3. **`.ttc` 字体不兼容** → `msyh.ttc` 不行，换成 `simhei.ttf`
+4. **UTF-8 字符串到 `sf::String` 乱码** → `sf::String(const char*)` 默认用系统GBK编码，需 `sf::String::fromUtf8()` 显式转
+5. **`sf::Mouse::getPosition()` 桌面坐标 vs 事件坐标** → 滑条拖拽需用事件 `position` 字段
+6. **Q键冷却 dt=0 永远不减** → 从 render 移到 update，用真实 dt
+7. **Ctrl+拆分后物品消失** → `mouseUp` 未判 `splitDialogOpen` 导致自动扔出
+8. **空格子白色方块** — 排查全过程：
+   - 禁用文字渲染 → 仍在
+   - 隐藏农耕高亮 → 仍在
+   - 纯黑背景独立测试 + 逐元素加回 → 定位到 `default` 分支
+   - **根因：`m_items[]` 数组未初始化，垃圾值不等 `Empty`，走 icon 默认白色**
+   - 修复：`ItemType m_items[8] = {}` 零初始化
+9. **背包耦合 FarmScene** → 重构到 Game 层，全局共享
+
+## 当前架构
+
+```
+src/
+  main.cpp
+  core/    → Game(全局主循环+场景管理+背包), Scene, Camera
+  entities/→ Player, Tool, Item
+  world/   → TileMap, TileType
+  scenes/  → FarmScene(农耕，不管理背包)
+  ui/      → Inventory(背包数据+UI+交互，全局系统)
+```
+
+## 下一阶段
+阶段2.3：作物生长（种子→幼苗→成熟，倒计时状态机）
+阶段2.5：昼夜循环
+
+---
+日期: 2026-05-21

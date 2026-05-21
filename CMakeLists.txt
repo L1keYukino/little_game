@@ -23,6 +23,7 @@ set(SOURCES
     src/world/TileMap.cpp
     src/entities/Player.cpp
     src/scenes/FarmScene.cpp
+    src/ui/Inventory.cpp
 )
 
 add_executable(farm_game ${SOURCES})

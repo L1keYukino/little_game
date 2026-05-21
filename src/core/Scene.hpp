@@ -11,7 +11,8 @@ public:
 
     // 处理输入事件（键盘按下、鼠标点击等）
     // 参数是 const 引用，因为我们只读取事件，不修改 window
-    virtual void handleInput(const sf::Event& event) = 0;
+    // 默认空实现 —— 不需要输入的场景（如过场动画）不用重写
+    virtual void handleInput(const sf::Event&) {}
 
     // 更新游戏逻辑（移动、碰撞、计时等）
     // dt = deltaTime，距上一帧过去了多少秒

@@ -1,98 +1,144 @@
 #include "Game.hpp"
-#include <stdexcept>
 
 namespace {
-    // 每帧的默认底色（在场景画之前全屏填充）
     constexpr sf::Color CLEAR_COLOR(20, 20, 20);
 }
 
 Game::Game()
-    // 创建 800x600 的窗口，标题 "Farm Game"
     : m_window(sf::RenderWindow(sf::VideoMode({800, 600}), "Farm Game"))
 {
-    // 限制帧率到 60 FPS —— 简单但有效的做法
-    // 另一种方式是 vsync: m_window.setVerticalSyncEnabled(true)
-    // setFramerateLimit 的好处是不依赖显示器刷新率
     m_window.setFramerateLimit(60);
 }
 
 Game::~Game()
 {
-    // 场景栈中的 unique_ptr 会自动清理，不需要手动 delete
-    // 但要确保在窗口关闭前清理（不然 OpenGL 上下文可能已销毁）
     while (!m_scenes.empty())
         m_scenes.pop();
 }
 
 void Game::run()
 {
-    // ====== 游戏主循环 ======
-    // 这是整个游戏的心脏，每帧执行一次
-    // 经典三步骤：输入 → 更新 → 渲染
-
     while (m_window.isOpen())
     {
-        // 1. 计算 deltaTime（距上一帧的秒数）
-        //    乘以 dt 让所有运动与帧率无关
-        //    比如 speed=200 表示每秒 200px，不管帧率是 30 还是 60
         float dt = m_clock.restart().asSeconds();
+        if (dt > 0.1f) dt = 0.1f;
 
-        // 2. 处理输入（事件队列）
         handleInput();
-
-        // 3. 更新游戏逻辑
         update(dt);
-
-        // 4. 渲染
         render();
     }
 }
 
+// ====== 全局输入（与场景无关的通用快捷键） ======
+
+void Game::handleGlobalInput(const sf::Event& event)
+{
+    // E 键切换背包
+    if (auto* key = event.getIf<sf::Event::KeyPressed>())
+    {
+        if (key->code == sf::Keyboard::Key::E)
+        {
+            if (m_inventory.isOpen()) m_inventory.close();
+            else                     m_inventory.toggle();
+        }
+        if (m_inventory.isOpen() && key->code == sf::Keyboard::Key::Escape)
+            m_inventory.close();
+    }
+
+    // 鼠标事件（仅背包打开时）
+    bool ctrl = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl)
+             || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RControl);
+
+    if (auto* m = event.getIf<sf::Event::MouseButtonPressed>())
+        if (m->button == sf::Mouse::Button::Left && m_inventory.isOpen())
+            m_inventory.onMouseDown(ctrl, m->position);
+
+    if (auto* m = event.getIf<sf::Event::MouseButtonReleased>())
+        if (m->button == sf::Mouse::Button::Left && m_inventory.isOpen())
+            m_inventory.onMouseUp(ctrl, m->position);
+
+    // 滚轮切换物品
+    if (auto* wheel = event.getIf<sf::Event::MouseWheelScrolled>())
+    {
+        int slot = m_inventory.getSelectedSlot();
+        if (wheel->delta > 0) slot--; else slot++;
+        if (slot < 0) slot = 7;
+        if (slot > 7) slot = 0;
+        m_inventory.setSelectedSlot(slot);
+    }
+
+    // 拆分对话框文本输入
+    if (auto* t = event.getIf<sf::Event::TextEntered>())
+        if (m_inventory.isSplitDialogOpen())
+            m_inventory.onTextEntered(t->unicode);
+}
+
 void Game::handleInput()
 {
-    // 事件轮询 —— 遍历窗口的事件队列
-    // 每一帧可能有 0 个、1 个或多个事件（按键、鼠标、关闭窗口等）
     while (auto event = m_window.pollEvent())
     {
-        // 关闭窗口按钮（点 × 或 Alt+F4）
         if (event->is<sf::Event::Closed>())
         {
             m_window.close();
             return;
         }
 
-        // 把事件传递给当前场景处理
-        if (!m_scenes.empty())
+        // 全局快捷键先处理（E、Esc、滚轮、Q、数字键、背包鼠标交互）
+        handleGlobalInput(*event);
+
+        // 背包打开时不把事件传给场景（游戏暂停）
+        if (!m_inventory.isOpen() && !m_scenes.empty())
             m_scenes.top()->handleInput(*event);
     }
 }
 
 void Game::update(float dt)
 {
-    // 更新当前活跃场景（栈顶）
-    if (!m_scenes.empty())
+    m_inventory.update(dt);
+
+    // Q 键扔物品（背包开关都能用）
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Q))
+        m_inventory.onThrowKey();
+
+    // 数字键 1-8 切换物品（背包开关都能用）
+    static const sf::Keyboard::Key numKeys[8] = {
+        sf::Keyboard::Key::Num1, sf::Keyboard::Key::Num2,
+        sf::Keyboard::Key::Num3, sf::Keyboard::Key::Num4,
+        sf::Keyboard::Key::Num5, sf::Keyboard::Key::Num6,
+        sf::Keyboard::Key::Num7, sf::Keyboard::Key::Num8,
+    };
+    for (int i = 0; i < 8; ++i)
+        if (sf::Keyboard::isKeyPressed(numKeys[i]))
+            m_inventory.setSelectedSlot(i);
+
+    // 背包打开时不更新场景（游戏暂停）
+    if (!m_inventory.isOpen() && !m_scenes.empty())
         m_scenes.top()->update(dt);
 }
 
 void Game::render()
 {
-    // 清空窗口（用深色背景，防止闪烁）
     m_window.clear(CLEAR_COLOR);
 
-    // 让当前场景绘制自己
+    // 场景渲染
     if (!m_scenes.empty())
         m_scenes.top()->render(m_window);
 
-    // 双缓冲：后台缓冲画好后，翻转到前台显示
-    // SFML 的 display() 内部做了 swap buffers
+    // 全局 HUD（背包、快捷栏）—— 用屏幕坐标，不受场景摄像机影响
+    sf::View oldView = m_window.getView();
+    m_window.setView(m_window.getDefaultView());
+
+    sf::Vector2i mousePos = sf::Mouse::getPosition(m_window);
+    m_inventory.updateHover(mousePos);
+    m_inventory.render(m_window);
+
+    m_window.setView(oldView);
     m_window.display();
 }
 
 void Game::changeScene(std::unique_ptr<Scene> newScene)
 {
-    // 替换场景：先弹出旧场景，压入新场景
-    if (!m_scenes.empty())
-        m_scenes.pop();
+    if (!m_scenes.empty()) m_scenes.pop();
     m_scenes.push(std::move(newScene));
 }
 
@@ -103,6 +149,5 @@ void Game::pushScene(std::unique_ptr<Scene> scene)
 
 void Game::popScene()
 {
-    if (!m_scenes.empty())
-        m_scenes.pop();
+    if (!m_scenes.empty()) m_scenes.pop();
 }
