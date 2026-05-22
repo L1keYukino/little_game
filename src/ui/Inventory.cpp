@@ -193,6 +193,16 @@ void Inventory::throwCursorItem(int count)
     if (m_cursorCount <= 0) m_cursorType = ItemType::Empty;
 }
 
+void Inventory::resetInteraction()
+{
+    m_mouseDown = false;
+    m_dragFromSlot = -1;
+    m_splitMode = false;
+    m_draggingSlider = false;
+    m_hoveredSlot = -1;
+    if (m_splitDialogOpen) closeSplitDialog(false);
+}
+
 bool Inventory::addItemAuto(ItemType type, int count)
 {
     int maxStack = maxStackSize(type);
@@ -239,23 +249,21 @@ void Inventory::onMouseDown(bool ctrlHeld, const sf::Vector2i& mousePos)
     // 拆分对话框打开时
     if (m_splitDialogOpen)
     {
-        // 检测滑条手柄点击
+        float dlgX = (m_winW - 320.f) / 2.f, dlgY = (m_winH - 180.f) / 2.f;
+
         int handleX = splitAmountToSlider(m_splitAmount);
-        if (std::abs(mousePos.x - handleX) < 20.f && mousePos.y > 260.f && mousePos.y < 310.f)
+        if (std::abs(mousePos.x - handleX) < 20.f && mousePos.y > dlgY + 60.f && mousePos.y < dlgY + 110.f)
         { m_draggingSlider = true; m_inputFocused = false; return; }
 
-        // 点击输入框 → 聚焦
-        if (mousePos.x > 370.f && mousePos.x < 430.f && mousePos.y > 238.f && mousePos.y < 266.f)
+        if (mousePos.x > dlgX + 130.f && mousePos.x < dlgX + 190.f && mousePos.y > dlgY + 38.f && mousePos.y < dlgY + 66.f)
         { m_inputFocused = true; return; }
 
-        // 点击其他地方 → 取消聚焦
         m_inputFocused = false;
 
-        // 确认按钮
-        if (mousePos.x > 295.f && mousePos.x < 380.f && mousePos.y > 305.f && mousePos.y < 330.f)
+        if (mousePos.x > dlgX + 55.f && mousePos.x < dlgX + 140.f && mousePos.y > dlgY + 105.f && mousePos.y < dlgY + 130.f)
         { closeSplitDialog(true); return; }
-        // 取消按钮
-        if (mousePos.x > 415.f && mousePos.x < 500.f && mousePos.y > 305.f && mousePos.y < 330.f)
+
+        if (mousePos.x > dlgX + 175.f && mousePos.x < dlgX + 260.f && mousePos.y > dlgY + 105.f && mousePos.y < dlgY + 130.f)
         { closeSplitDialog(false); return; }
         return;
     }
@@ -520,7 +528,6 @@ void Inventory::closeSplitDialog(bool confirm)
 
 void Inventory::updateSplitSlider(const sf::Vector2i& mousePos)
 {
-    const float barX = 280.f, barW = 240.f;
     m_splitAmount = splitSliderToAmount(mousePos.x);
     m_splitInput = std::to_string(m_splitAmount);
 }
@@ -539,14 +546,18 @@ void Inventory::updateSplitFromInput()
 
 int Inventory::splitSliderToAmount(int sliderX) const
 {
-    const float barX = 280.f, barW = 240.f;
+    float dlgX  = (m_winW - 320.f) / 2.f;
+    float barX  = dlgX + 40.f;
+    float barW  = 320.f - 80.f;
     float t = std::clamp((sliderX - barX) / barW, 0.f, 1.f);
     return m_splitMax > 1 ? static_cast<int>(1 + t * (m_splitMax - 1) + 0.5f) : 1;
 }
 
 int Inventory::splitAmountToSlider(int amount) const
 {
-    const float barX = 280.f, barW = 240.f;
+    float dlgX = (m_winW - 320.f) / 2.f;
+    float barX = dlgX + 40.f;
+    float barW = 320.f - 80.f;
     if (m_splitMax <= 1) return static_cast<int>(barX);
     float t = static_cast<float>(amount - 1) / (m_splitMax - 1);
     return static_cast<int>(barX + t * barW);
@@ -560,8 +571,12 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
     overlay.setFillColor(sf::Color(0, 0, 0, 140));
     window.draw(overlay);
 
-    sf::RectangleShape dlgBg(sf::Vector2f(320.f, 180.f));
-    dlgBg.setPosition(sf::Vector2f(240.f, 200.f));
+    const float DLG_W = 320.f, DLG_H = 180.f;
+    float dlgX = (m_winW - DLG_W) / 2.f;
+    float dlgY = (m_winH - DLG_H) / 2.f;
+
+    sf::RectangleShape dlgBg(sf::Vector2f(DLG_W, DLG_H));
+    dlgBg.setPosition(sf::Vector2f(dlgX, dlgY));
     dlgBg.setFillColor(sf::Color(50, 50, 50, 240));
     dlgBg.setOutlineColor(sf::Color(150, 150, 150, 255));
     dlgBg.setOutlineThickness(2.f);
@@ -573,40 +588,37 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
     title.setString(toSfString("拆分物品"));
     title.setCharacterSize(18);
     title.setFillColor(sf::Color::White);
-    title.setPosition(sf::Vector2f(m_winW / 2.f -title.getLocalBounds().size.x / 2.f, 208.f));
+    title.setPosition(sf::Vector2f(dlgX + DLG_W / 2.f - title.getLocalBounds().size.x / 2.f, dlgY + 8.f));
     window.draw(title);
 
     // 数字输入框
     sf::RectangleShape inputBg(sf::Vector2f(60.f, 28.f));
-    inputBg.setPosition(sf::Vector2f(370.f, 238.f));
+    inputBg.setPosition(sf::Vector2f(dlgX + DLG_W / 2.f - 30.f, dlgY + 38.f));
     inputBg.setFillColor(sf::Color(30, 30, 30, 255));
-    inputBg.setOutlineColor(m_inputFocused ? sf::Color::White
-                                           : sf::Color(140, 140, 140, 255));
+    inputBg.setOutlineColor(m_inputFocused ? sf::Color::White : sf::Color(140, 140, 140, 255));
     inputBg.setOutlineThickness(m_inputFocused ? 2.f : 1.f);
     window.draw(inputBg);
 
-    // 数字文本
     sf::Text inputText(m_font);
     inputText.setString(m_splitInput);
     inputText.setCharacterSize(20);
     inputText.setFillColor(sf::Color::White);
-    float ix = m_winW / 2.f -inputText.getLocalBounds().size.x / 2.f;
-    inputText.setPosition(sf::Vector2f(ix, 240.f));
+    float ix = dlgX + DLG_W / 2.f - inputText.getLocalBounds().size.x / 2.f;
+    inputText.setPosition(sf::Vector2f(ix, dlgY + 40.f));
     window.draw(inputText);
 
-    // 闪烁光标：贴着文本末尾的细竖线
     if (m_inputFocused && m_blinkTimer < 0.5f)
     {
         sf::FloatRect tb = inputText.getLocalBounds();
         float cursorX = ix + tb.size.x + 2.f;
         sf::RectangleShape cursor(sf::Vector2f(2.f, 22.f));
-        cursor.setPosition(sf::Vector2f(cursorX, 240.f));
+        cursor.setPosition(sf::Vector2f(cursorX, dlgY + 40.f));
         cursor.setFillColor(sf::Color::White);
         window.draw(cursor);
     }
 
     // 滑条
-    const float barX = 280.f, barY = 280.f, barW = 240.f, barH = 10.f;
+    const float barX = dlgX + 40.f, barY = dlgY + 80.f, barW = DLG_W - 80.f, barH = 10.f;
     sf::RectangleShape track(sf::Vector2f(barW, barH));
     track.setPosition(sf::Vector2f(barX, barY));
     track.setFillColor(sf::Color(80, 80, 80, 255));
@@ -640,11 +652,11 @@ void Inventory::renderSplitDialog(sf::RenderWindow& window)
 
     sf::Text confirmText(m_font); confirmText.setString(toSfString("[ 确认 ]"));
     confirmText.setCharacterSize(16); confirmText.setFillColor(sf::Color(100, 255, 100));
-    confirmText.setPosition(sf::Vector2f(300.f, 310.f)); window.draw(confirmText);
+    confirmText.setPosition(sf::Vector2f(dlgX + 60.f, dlgY + 110.f)); window.draw(confirmText);
 
     sf::Text cancelText(m_font); cancelText.setString(toSfString("[ 取消 ]"));
     cancelText.setCharacterSize(16); cancelText.setFillColor(sf::Color(255, 100, 100));
-    cancelText.setPosition(sf::Vector2f(420.f, 310.f)); window.draw(cancelText);
+    cancelText.setPosition(sf::Vector2f(dlgX + 180.f, dlgY + 110.f)); window.draw(cancelText);
 }
 
 // ====== 渲染 ======

@@ -22,7 +22,7 @@ public:
     ItemType getSelectedItem() const;
 
     bool isOpen() const { return m_open; }
-    void toggle() { m_open = !m_open; }
+    void toggle() { m_open = !m_open; resetInteraction(); }
     void close();
     bool isSplitDialogOpen() const { return m_splitDialogOpen; }
 
@@ -55,6 +55,7 @@ private:
     void placeOne(int slot);
     void placeAll(int slot);
     void throwCursorItem(int count);
+    void resetInteraction(); // 清除所有拖拽/拆分数残留状态
 
     void openSplitDialog(int sourceSlot, int targetSlot);
     void closeSplitDialog(bool confirm);

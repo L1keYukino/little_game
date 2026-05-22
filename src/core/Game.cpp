@@ -5,8 +5,16 @@ namespace {
 }
 
 Game::Game()
-    : m_window(sf::RenderWindow(sf::VideoMode({1280, 720}), "Farm Game"))
-    , m_inventory(1280.f, 720.f)
+    : m_window([&]{
+        auto dm = sf::VideoMode::getDesktopMode();
+        unsigned w = static_cast<unsigned>(dm.size.x * 0.85f);
+        return sf::RenderWindow(sf::VideoMode({w, w * 9 / 16}), "Farm Game");
+      }())
+    , m_inventory([&]{
+        auto dm = sf::VideoMode::getDesktopMode();
+        float w = dm.size.x * 0.85f;
+        return Inventory(w, w * 9.f / 16.f);
+      }())
 {
     m_window.setFramerateLimit(60);
 
@@ -122,8 +130,8 @@ void Game::update(float dt)
         if (sf::Keyboard::isKeyPressed(numKeys[i]))
             m_inventory.setSelectedSlot(i);
 
-    // 背包打开时不更新场景（游戏暂停）
-    if (!m_inventory.isOpen() && !m_scenes.empty())
+    // 场景始终更新（背包打开时作物、时间等继续运转）
+    if (!m_scenes.empty())
         m_scenes.top()->update(dt);
 }
 
@@ -156,13 +164,13 @@ void Game::render()
 
         // 底色（暗色背景 + 半透明）
         sf::RectangleShape timeBg(sf::Vector2f(tb.size.x + 16.f, tb.size.y + 10.f));
-        timeBg.setPosition(sf::Vector2f(1280.f - tb.size.x - 24.f, 6.f));
+        timeBg.setPosition(sf::Vector2f(m_window.getSize().x - tb.size.x - 24.f, 6.f));
         timeBg.setFillColor(sf::Color(20, 20, 20, 200));
         timeBg.setOutlineColor(sf::Color(60, 60, 60, 180));
         timeBg.setOutlineThickness(1.f);
         m_window.draw(timeBg);
 
-        timeText.setPosition(sf::Vector2f(1280.f - tb.size.x - 16.f, 8.f));
+        timeText.setPosition(sf::Vector2f(m_window.getSize().x - tb.size.x - 16.f, 8.f));
         m_window.draw(timeText);
     }
 
